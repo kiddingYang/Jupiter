@@ -13,17 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.registry;
-
-import org.jupiter.common.util.ExceptionUtil;
-import org.jupiter.common.util.Lists;
-import org.jupiter.common.util.Reflects;
-import org.jupiter.common.util.SystemPropertyUtil;
 
 import java.lang.reflect.Constructor;
 import java.net.SocketAddress;
 import java.util.List;
+
+import org.jupiter.common.util.Lists;
+import org.jupiter.common.util.Reflects;
+import org.jupiter.common.util.SystemPropertyUtil;
+import org.jupiter.common.util.ThrowUtil;
 
 /**
  * jupiter
@@ -83,22 +82,21 @@ public interface RegistryServer extends RegistryMonitor {
 
         private static RegistryServer newInstance(Object... parameters) {
             if (defaultRegistryClass == null || allConstructorsParameterTypes == null) {
-                throw new UnsupportedOperationException("unsupported default registry");
+                throw new UnsupportedOperationException("Unsupported default registry");
             }
 
             // 根据JLS方法调用的静态分派规则查找最匹配的方法parameterTypes
             Class<?>[] parameterTypes = Reflects.findMatchingParameterTypes(allConstructorsParameterTypes, parameters);
             if (parameterTypes == null) {
-                throw new IllegalArgumentException("parameter types");
+                throw new IllegalArgumentException("Parameter types");
             }
 
             try {
-                @SuppressWarnings("JavaReflectionMemberAccess")
                 Constructor<RegistryServer> c = defaultRegistryClass.getConstructor(parameterTypes);
                 c.setAccessible(true);
                 return c.newInstance(parameters);
             } catch (Exception e) {
-                ExceptionUtil.throwException(e);
+                ThrowUtil.throwException(e);
             }
             return null; // should never get here
         }

@@ -13,33 +13,37 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.transport.netty;
+
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.util.concurrent.TimeUnit;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOutboundHandler;
+import io.netty.handler.flush.FlushConsolidationHandler;
+
 import org.jupiter.common.util.JConstants;
+import org.jupiter.common.util.Requires;
+import org.jupiter.transport.CodecConfig;
 import org.jupiter.transport.JConnection;
 import org.jupiter.transport.JOption;
 import org.jupiter.transport.UnresolvedAddress;
 import org.jupiter.transport.channel.JChannelGroup;
 import org.jupiter.transport.exception.ConnectFailedException;
 import org.jupiter.transport.netty.handler.IdleStateChecker;
+import org.jupiter.transport.netty.handler.LowCopyProtocolDecoder;
+import org.jupiter.transport.netty.handler.LowCopyProtocolEncoder;
 import org.jupiter.transport.netty.handler.ProtocolDecoder;
 import org.jupiter.transport.netty.handler.ProtocolEncoder;
 import org.jupiter.transport.netty.handler.connector.ConnectionWatchdog;
 import org.jupiter.transport.netty.handler.connector.ConnectorHandler;
 import org.jupiter.transport.netty.handler.connector.ConnectorIdleStateTrigger;
 import org.jupiter.transport.processor.ConsumerProcessor;
-
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-import java.util.concurrent.TimeUnit;
-
-import static org.jupiter.common.util.Preconditions.checkNotNull;
 
 /**
  * Jupiter tcp connector based on netty.
@@ -104,7 +108,8 @@ public class JNettyTcpConnector extends NettyTcpConnector {
 
     // handlers
     private final ConnectorIdleStateTrigger idleStateTrigger = new ConnectorIdleStateTrigger();
-    private final ProtocolEncoder encoder = new ProtocolEncoder();
+    private final ChannelOutboundHandler encoder =
+            CodecConfig.isCodecLowCopy() ? new LowCopyProtocolEncoder() : new ProtocolEncoder();
     private final ConnectorHandler handler = new ConnectorHandler();
 
     public JNettyTcpConnector() {
@@ -134,7 +139,7 @@ public class JNettyTcpConnector extends NettyTcpConnector {
 
     @Override
     protected void setProcessor(ConsumerProcessor processor) {
-        handler.processor(checkNotNull(processor, "processor"));
+        handler.processor(Requires.requireNotNull(processor, "processor"));
     }
 
     @Override
@@ -151,10 +156,11 @@ public class JNettyTcpConnector extends NettyTcpConnector {
             @Override
             public ChannelHandler[] handlers() {
                 return new ChannelHandler[] {
+                        new FlushConsolidationHandler(JConstants.EXPLICIT_FLUSH_AFTER_FLUSHES, true),
                         this,
                         new IdleStateChecker(timer, 0, JConstants.WRITER_IDLE_TIME_SECONDS, 0),
                         idleStateTrigger,
-                        new ProtocolDecoder(),
+                        CodecConfig.isCodecLowCopy() ? new LowCopyProtocolDecoder() : new ProtocolDecoder(),
                         encoder,
                         handler
                 };
@@ -180,7 +186,7 @@ public class JNettyTcpConnector extends NettyTcpConnector {
                 future.sync();
             }
         } catch (Throwable t) {
-            throw new ConnectFailedException("connects to [" + address + "] fails", t);
+            throw new ConnectFailedException("Connects to [" + address + "] fails", t);
         }
 
         return new JNettyConnection(address, future) {

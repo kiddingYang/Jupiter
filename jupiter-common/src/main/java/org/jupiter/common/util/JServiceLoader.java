@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.common.util;
 
 import java.io.BufferedReader;
@@ -21,9 +20,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URL;
-import java.util.*;
-
-import static org.jupiter.common.util.Preconditions.checkNotNull;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.ServiceConfigurationError;
 
 /**
  * A simple service-provider loading facility (SPI).
@@ -64,26 +69,26 @@ public final class JServiceLoader<S> implements Iterable<S> {
             return sortList;
         }
 
-        Collections.sort(sortList, new Comparator<S>() {
+        sortList.sort((o1, o2) -> {
+            SpiMetadata o1_spi = o1.getClass().getAnnotation(SpiMetadata.class);
+            SpiMetadata o2_spi = o2.getClass().getAnnotation(SpiMetadata.class);
 
-            @Override
-            public int compare(S o1, S o2) {
-                SpiMetadata o1_spi = o1.getClass().getAnnotation(SpiMetadata.class);
-                SpiMetadata o2_spi = o2.getClass().getAnnotation(SpiMetadata.class);
+            int o1_priority = o1_spi == null ? 0 : o1_spi.priority();
+            int o2_priority = o2_spi == null ? 0 : o2_spi.priority();
 
-                int o1_priority = o1_spi == null ? 0 : o1_spi.priority();
-                int o2_priority = o2_spi == null ? 0 : o2_spi.priority();
-
-                // 优先级高的排前边
-                return o2_priority - o1_priority;
-            }
+            // 优先级高的排前边
+            return o2_priority - o1_priority;
         });
 
         return sortList;
     }
 
     public S first() {
-        return sort().get(0);
+        List<S> sortList = sort();
+        if (sortList.isEmpty()) {
+            throw fail(service, "could not find any implementation for class");
+        }
+        return sortList.get(0);
     }
 
     public S find(String implName) {
@@ -94,17 +99,15 @@ public final class JServiceLoader<S> implements Iterable<S> {
             }
         }
         while (lookupIterator.hasNext()) {
-            Pair<String, Class<S>> e = lookupIterator.next();
-            String name = e.getFirst();
-            Class<S> cls = e.getSecond();
+            Class<S> cls = lookupIterator.next();
             SpiMetadata spi = cls.getAnnotation(SpiMetadata.class);
             if (spi != null && spi.name().equalsIgnoreCase(implName)) {
                 try {
                     S provider = service.cast(cls.newInstance());
-                    providers.put(name, provider);
+                    providers.put(cls.getName(), provider);
                     return provider;
                 } catch (Throwable x) {
-                    throw fail(service, "provider " + name + " could not be instantiated", x);
+                    throw fail(service, "provider " + cls.getName() + " could not be instantiated", x);
                 }
             }
         }
@@ -117,7 +120,7 @@ public final class JServiceLoader<S> implements Iterable<S> {
     }
 
     private JServiceLoader(Class<S> service, ClassLoader loader) {
-        this.service = checkNotNull(service, "service interface cannot be null");
+        this.service = Requires.requireNotNull(service, "service interface cannot be null");
         this.loader = (loader == null) ? ClassLoader.getSystemClassLoader() : loader;
         reload();
     }
@@ -170,29 +173,16 @@ public final class JServiceLoader<S> implements Iterable<S> {
         return lc + 1;
     }
 
-    @SuppressWarnings("all")
     private Iterator<String> parse(Class<?> service, URL url) {
-        InputStream in = null;
-        BufferedReader r = null;
-        ArrayList<String> names = Lists.newArrayList();
-        try {
-            in = url.openStream();
-            r = new BufferedReader(new InputStreamReader(in, "utf-8"));
+        ArrayList<String> names = new ArrayList<>();
+        try (InputStream in = url.openStream();
+             BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
             int lc = 1;
-            while ((lc = parseLine(service, url, r, lc, names)) >= 0) ;
+            // noinspection StatementWithEmptyBody
+            while ((lc = parseLine(service, url, r, lc, names)) >= 0)
+                ;
         } catch (IOException x) {
             throw fail(service, "error reading configuration file", x);
-        } finally {
-            try {
-                if (r != null) {
-                    r.close();
-                }
-                if (in != null) {
-                    in.close();
-                }
-            } catch (IOException y) {
-                throw fail(service, "error closing configuration file", y);
-            }
         }
         return names.iterator();
     }
@@ -213,15 +203,13 @@ public final class JServiceLoader<S> implements Iterable<S> {
                 if (knownProviders.hasNext()) {
                     return knownProviders.next().getValue();
                 }
-                Pair<String, Class<S>> pair = lookupIterator.next();
-                String name = pair.getFirst();
-                Class<S> cls = pair.getSecond();
+                Class<S> cls = lookupIterator.next();
                 try {
                     S provider = service.cast(cls.newInstance());
-                    providers.put(name, provider);
+                    providers.put(cls.getName(), provider);
                     return provider;
                 } catch (Throwable x) {
-                    throw fail(service, "provider " + name + " could not be instantiated", x);
+                    throw fail(service, "provider " + cls.getName() + " could not be instantiated", x);
                 }
             }
 
@@ -232,7 +220,7 @@ public final class JServiceLoader<S> implements Iterable<S> {
         };
     }
 
-    private class LazyIterator implements Iterator<Pair<String, Class<S>>> {
+    private class LazyIterator implements Iterator<Class<S>> {
         Class<S> service;
         ClassLoader loader;
         Enumeration<URL> configs = null;
@@ -273,7 +261,7 @@ public final class JServiceLoader<S> implements Iterable<S> {
 
         @SuppressWarnings("unchecked")
         @Override
-        public Pair<String, Class<S>> next() {
+        public Class<S> next() {
             if (!hasNext()) {
                 throw new NoSuchElementException();
             }
@@ -288,7 +276,7 @@ public final class JServiceLoader<S> implements Iterable<S> {
             if (!service.isAssignableFrom(cls)) {
                 throw fail(service, "provider " + name + " not a subtype");
             }
-            return Pair.of(name, (Class<S>) cls);
+            return (Class<S>) cls;
         }
 
         @Override

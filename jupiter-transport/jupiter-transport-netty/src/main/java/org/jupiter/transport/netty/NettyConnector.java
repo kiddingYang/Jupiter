@@ -13,37 +13,39 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.transport.netty;
 
+import java.util.Collection;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ThreadFactory;
+
 import io.netty.bootstrap.Bootstrap;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.buffer.UnpooledByteBufAllocator;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.WriteBufferWaterMark;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.concurrent.DefaultThreadFactory;
-import io.netty.util.internal.PlatformDependent;
+
 import org.jupiter.common.concurrent.NamedThreadFactory;
 import org.jupiter.common.util.ClassUtil;
 import org.jupiter.common.util.JConstants;
 import org.jupiter.common.util.Maps;
+import org.jupiter.common.util.Requires;
 import org.jupiter.common.util.internal.logging.InternalLogger;
 import org.jupiter.common.util.internal.logging.InternalLoggerFactory;
-import org.jupiter.transport.*;
+import org.jupiter.transport.Directory;
+import org.jupiter.transport.JConfig;
+import org.jupiter.transport.JConnection;
+import org.jupiter.transport.JConnectionManager;
+import org.jupiter.transport.JConnector;
+import org.jupiter.transport.JOption;
+import org.jupiter.transport.UnresolvedAddress;
 import org.jupiter.transport.channel.CopyOnWriteGroupList;
 import org.jupiter.transport.channel.DirectoryJChannelGroup;
 import org.jupiter.transport.channel.JChannelGroup;
 import org.jupiter.transport.netty.channel.NettyChannelGroup;
 import org.jupiter.transport.netty.estimator.JMessageSizeEstimator;
 import org.jupiter.transport.processor.ConsumerProcessor;
-
-import java.util.Collection;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ThreadFactory;
-
-import static org.jupiter.common.util.Preconditions.checkNotNull;
 
 /**
  * jupiter
@@ -58,11 +60,11 @@ public abstract class NettyConnector implements JConnector<JConnection> {
     static {
         // touch off DefaultChannelId.<clinit>
         // because getProcessId() sometimes too slow
-        ClassUtil.classInitialize("io.netty.channel.DefaultChannelId", 500);
+        ClassUtil.initializeClass("io.netty.channel.DefaultChannelId", 500);
     }
 
     protected final Protocol protocol;
-    protected final HashedWheelTimer timer = new HashedWheelTimer(new NamedThreadFactory("connector.timer"));
+    protected final HashedWheelTimer timer = new HashedWheelTimer(new NamedThreadFactory("connector.timer", true));
 
     private final ConcurrentMap<UnresolvedAddress, JChannelGroup> addressGroups = Maps.newConcurrentMap();
     private final DirectoryJChannelGroup directoryGroup = new DirectoryJChannelGroup();
@@ -74,10 +76,8 @@ public abstract class NettyConnector implements JConnector<JConnection> {
 
     private ConsumerProcessor processor;
 
-    protected volatile ByteBufAllocator allocator;
-
     public NettyConnector(Protocol protocol) {
-        this(protocol, JConstants.AVAILABLE_PROCESSORS + 1);
+        this(protocol, JConstants.AVAILABLE_PROCESSORS << 1);
     }
 
     public NettyConnector(Protocol protocol, int nWorkers) {
@@ -93,14 +93,13 @@ public abstract class NettyConnector implements JConnector<JConnection> {
 
         JConfig child = config();
         child.setOption(JOption.IO_RATIO, 100);
-        child.setOption(JOption.PREFER_DIRECT, true);
-        child.setOption(JOption.USE_POOLED_ALLOCATOR, true);
 
         doInit();
     }
 
     protected abstract void doInit();
 
+    @SuppressWarnings("SameParameterValue")
     protected ThreadFactory workerThreadFactory(String name) {
         return new DefaultThreadFactory(name, Thread.MAX_PRIORITY);
     }
@@ -122,7 +121,7 @@ public abstract class NettyConnector implements JConnector<JConnection> {
 
     @Override
     public JChannelGroup group(UnresolvedAddress address) {
-        checkNotNull(address, "address");
+        Requires.requireNotNull(address, "address");
 
         JChannelGroup group = addressGroups.get(address);
         if (group == null) {
@@ -146,7 +145,7 @@ public abstract class NettyConnector implements JConnector<JConnection> {
         boolean added = groups.addIfAbsent(group);
         if (added) {
             if (logger.isInfoEnabled()) {
-                logger.info("Added channel group: {} to {}.", group, directory.directory());
+                logger.info("Added channel group: {} to {}.", group, directory.directoryString());
             }
         }
         return added;
@@ -158,7 +157,7 @@ public abstract class NettyConnector implements JConnector<JConnection> {
         boolean removed = groups.remove(group);
         if (removed) {
             if (logger.isWarnEnabled()) {
-                logger.warn("Removed channel group: {} in directory: {}.", group, directory.directory());
+                logger.warn("Removed channel group: {} in directory: {}.", group, directory.directoryString());
             }
         }
         return removed;
@@ -172,7 +171,7 @@ public abstract class NettyConnector implements JConnector<JConnection> {
     @Override
     public boolean isDirectoryAvailable(Directory directory) {
         CopyOnWriteGroupList groups = directory(directory);
-        JChannelGroup[] snapshot = groups.snapshot();
+        JChannelGroup[] snapshot = groups.getSnapshot();
         for (JChannelGroup g : snapshot) {
             if (g.isAvailable()) {
                 return true;
@@ -193,7 +192,7 @@ public abstract class NettyConnector implements JConnector<JConnection> {
 
     @Override
     public void shutdownGracefully() {
-        connectionManager.cancelAllReconnect();
+        connectionManager.cancelAllAutoReconnect();
         worker.shutdownGracefully().syncUninterruptibly();
         timer.stop();
         if (processor != null) {
@@ -206,22 +205,7 @@ public abstract class NettyConnector implements JConnector<JConnection> {
 
         setIoRatio(child.getOption(JOption.IO_RATIO));
 
-        boolean direct = child.getOption(JOption.PREFER_DIRECT);
-        if (child.getOption(JOption.USE_POOLED_ALLOCATOR)) {
-            if (direct) {
-                allocator = new PooledByteBufAllocator(PlatformDependent.directBufferPreferred());
-            } else {
-                allocator = new PooledByteBufAllocator(false);
-            }
-        } else {
-            if (direct) {
-                allocator = new UnpooledByteBufAllocator(PlatformDependent.directBufferPreferred());
-            } else {
-                allocator = new UnpooledByteBufAllocator(false);
-            }
-        }
-        bootstrap.option(ChannelOption.ALLOCATOR, allocator)
-                .option(ChannelOption.MESSAGE_SIZE_ESTIMATOR, JMessageSizeEstimator.DEFAULT);
+        bootstrap.option(ChannelOption.MESSAGE_SIZE_ESTIMATOR, JMessageSizeEstimator.DEFAULT);
     }
 
     /**
@@ -260,6 +244,19 @@ public abstract class NettyConnector implements JConnector<JConnection> {
     @SuppressWarnings("unused")
     protected void setProcessor(ConsumerProcessor processor) {
         // the default implementation does nothing
+    }
+
+    /**
+     * Create a WriteBufferWaterMark is used to set low water mark and high water mark for the write buffer.
+     */
+    protected WriteBufferWaterMark createWriteBufferWaterMark(int bufLowWaterMark, int bufHighWaterMark) {
+        WriteBufferWaterMark waterMark;
+        if (bufLowWaterMark >= 0 && bufHighWaterMark > 0) {
+            waterMark = new WriteBufferWaterMark(bufLowWaterMark, bufHighWaterMark);
+        } else {
+            waterMark = new WriteBufferWaterMark(512 * 1024, 1024 * 1024);
+        }
+        return waterMark;
     }
 
     /**

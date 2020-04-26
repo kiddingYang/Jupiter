@@ -13,14 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.common.atomic;
-
-import sun.misc.Unsafe;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+
+import sun.misc.Unsafe;
 
 /**
  * jupiter
@@ -36,7 +35,7 @@ final class UnsafeAtomicReferenceFieldUpdater<U, W> extends AtomicReferenceField
     UnsafeAtomicReferenceFieldUpdater(Unsafe unsafe, Class<U> tClass, String fieldName) throws NoSuchFieldException {
         Field field = tClass.getDeclaredField(fieldName);
         if (!Modifier.isVolatile(field.getModifiers())) {
-            throw new IllegalArgumentException("must be volatile");
+            throw new IllegalArgumentException("Field [" + fieldName + "] must be volatile");
         }
         if (unsafe == null) {
             throw new NullPointerException("unsafe");

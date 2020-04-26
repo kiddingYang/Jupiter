@@ -13,14 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.rpc.consumer.processor;
 
 import org.jupiter.rpc.JResponse;
 import org.jupiter.rpc.consumer.processor.task.MessageTask;
 import org.jupiter.rpc.executor.CloseableExecutor;
 import org.jupiter.transport.channel.JChannel;
-import org.jupiter.transport.payload.JResponseBytes;
+import org.jupiter.transport.payload.JResponsePayload;
 import org.jupiter.transport.processor.ConsumerProcessor;
 
 /**
@@ -44,10 +43,10 @@ public class DefaultConsumerProcessor implements ConsumerProcessor {
     }
 
     @Override
-    public void handleResponse(JChannel channel, JResponseBytes responseBytes) throws Exception {
-        MessageTask task = new MessageTask(channel, new JResponse(responseBytes));
+    public void handleResponse(JChannel channel, JResponsePayload responsePayload) throws Exception {
+        MessageTask task = new MessageTask(channel, new JResponse(responsePayload));
         if (executor == null) {
-            task.run();
+            channel.addTask(task);
         } else {
             executor.execute(task);
         }

@@ -13,11 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.transport.netty;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+
 import org.jupiter.transport.JProtocolHeader;
 
 /**
@@ -33,7 +33,7 @@ public class Heartbeats {
     private static final ByteBuf HEARTBEAT_BUF;
 
     static {
-        ByteBuf buf = Unpooled.buffer(JProtocolHeader.HEAD_LENGTH);
+        ByteBuf buf = Unpooled.buffer(JProtocolHeader.HEADER_SIZE);
         buf.writeShort(JProtocolHeader.MAGIC);
         buf.writeByte(JProtocolHeader.HEARTBEAT); // 心跳包这里可忽略高地址的4位序列化/反序列化标志
         buf.writeByte(0);

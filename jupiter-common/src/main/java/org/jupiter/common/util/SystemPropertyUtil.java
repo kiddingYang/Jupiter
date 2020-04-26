@@ -13,17 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.common.util;
-
-import org.jupiter.common.util.internal.logging.InternalLogger;
-import org.jupiter.common.util.internal.logging.InternalLoggerFactory;
 
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.regex.Pattern;
 
-import static org.jupiter.common.util.StackTraceUtil.*;
+import org.jupiter.common.util.internal.logging.InternalLogger;
+import org.jupiter.common.util.internal.logging.InternalLoggerFactory;
 
 /**
  * A collection of utility methods to retrieve and parse the values of the Java system properties.
@@ -33,7 +30,7 @@ import static org.jupiter.common.util.StackTraceUtil.*;
  *
  * @author jiachun.fjc
  */
-public class SystemPropertyUtil {
+public final class SystemPropertyUtil {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(SystemPropertyUtil.class);
 
@@ -77,17 +74,12 @@ public class SystemPropertyUtil {
             if (System.getSecurityManager() == null) {
                 value = System.getProperty(key);
             } else {
-                value = AccessController.doPrivileged(new PrivilegedAction<String>() {
-
-                    @Override
-                    public String run() {
-                        return System.getProperty(key);
-                    }
-                });
+                value = AccessController.doPrivileged((PrivilegedAction<String>) () -> System.getProperty(key));
             }
         } catch (Exception e) {
             if (logger.isWarnEnabled()) {
-                logger.warn("Unable to retrieve a system property '{}'; default values will be used, {}.", key, stackTrace(e));
+                logger.warn("Unable to retrieve a system property '{}'; default values will be used, {}.",
+                        key, StackTraceUtil.stackTrace(e));
             }
         }
 

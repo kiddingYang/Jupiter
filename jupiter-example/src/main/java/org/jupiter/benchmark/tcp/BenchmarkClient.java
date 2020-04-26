@@ -13,9 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.benchmark.tcp;
 
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.jupiter.common.util.JConstants;
 import org.jupiter.common.util.Lists;
 import org.jupiter.common.util.SystemPropertyUtil;
 import org.jupiter.common.util.internal.logging.InternalLogger;
@@ -28,13 +32,9 @@ import org.jupiter.rpc.consumer.future.InvokeFuture;
 import org.jupiter.rpc.consumer.future.InvokeFutureContext;
 import org.jupiter.rpc.load.balance.LoadBalancerType;
 import org.jupiter.serialization.SerializerType;
-import org.jupiter.transport.JOption;
 import org.jupiter.transport.UnresolvedAddress;
+import org.jupiter.transport.UnresolvedSocketAddress;
 import org.jupiter.transport.netty.JNettyTcpConnector;
-
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 2016-1-9的最新一次测试结果(小数据包1亿+次同步调用):
@@ -71,7 +71,9 @@ public class BenchmarkClient {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(BenchmarkClient.class);
 
     public static void main(String[] args) {
-        int processors = Runtime.getRuntime().availableProcessors();
+//        SystemPropertyUtil.setProperty("jupiter.io.codec.low_copy", "true");
+
+        int processors = JConstants.AVAILABLE_PROCESSORS;
         SystemPropertyUtil
                 .setProperty("jupiter.executor.factory.consumer.core.workers", String.valueOf(processors << 1));
         SystemPropertyUtil.setProperty("jupiter.tracing.needed", "false");
@@ -89,12 +91,9 @@ public class BenchmarkClient {
 //            }
         });
 
-        client.connector().config().setOption(JOption.WRITE_BUFFER_HIGH_WATER_MARK, 512 * 1024);
-        client.connector().config().setOption(JOption.WRITE_BUFFER_LOW_WATER_MARK, 256 * 1024);
-
         UnresolvedAddress[] addresses = new UnresolvedAddress[processors];
         for (int i = 0; i < processors; i++) {
-            addresses[i] = new UnresolvedAddress("127.0.0.1", 18099);
+            addresses[i] = new UnresolvedSocketAddress("127.0.0.1", 18099);
             client.connector().connect(addresses[i]);
         }
 
@@ -128,23 +127,19 @@ public class BenchmarkClient {
         final CountDownLatch latch = new CountDownLatch(processors << step);
         final AtomicLong count = new AtomicLong();
         for (int i = 0; i < (processors << step); i++) {
-            new Thread(new Runnable() {
+            new Thread(() -> {
+                for (int i1 = 0; i1 < t; i1++) {
+                    try {
+                        service.hello("jupiter");
 
-                @Override
-                public void run() {
-                    for (int i = 0; i < t; i++) {
-                        try {
-                            service.hello("jupiter");
-
-                            if (count.getAndIncrement() % 10000 == 0) {
-                                logger.warn("count=" + count.get());
-                            }
-                        } catch (Exception e) {
-                            e.printStackTrace();
+                        if (count.getAndIncrement() % 10000 == 0) {
+                            logger.warn("count=" + count.get());
                         }
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
-                    latch.countDown();
                 }
+                latch.countDown();
             }).start();
         }
         try {

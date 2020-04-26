@@ -13,13 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.common.util;
 
 import org.jupiter.common.util.internal.logging.InternalLogger;
 import org.jupiter.common.util.internal.logging.InternalLoggerFactory;
-
-import static org.jupiter.common.util.StackTraceUtil.*;
 
 /**
  * jupiter
@@ -27,23 +24,23 @@ import static org.jupiter.common.util.StackTraceUtil.*;
  *
  * @author jiachun.fjc
  */
-public class ClassUtil {
+public final class ClassUtil {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(ClassUtil.class);
 
     /**
-     * 提前加载并初始化指定的类, 某些平台下某些类的静态块里面的代码执行实在是太慢了:(
+     * 提前加载并初始化指定的类, 某些平台下某些类的静态块里面的代码执行执行的贼鸡儿慢
      *
      * @param className         类的全限定名称
      * @param tolerableMillis   超过这个时间打印警告日志
      */
-    public static void classInitialize(String className, long tolerableMillis) {
+    public static void initializeClass(String className, long tolerableMillis) {
         long start = System.currentTimeMillis();
         try {
             Class.forName(className);
         } catch (Throwable t) {
             if (logger.isWarnEnabled()) {
-                logger.warn("Failed to load class [{}] {}.", className, stackTrace(t));
+                logger.warn("Failed to load class [{}] {}.", className, StackTraceUtil.stackTrace(t));
             }
         }
 
@@ -53,12 +50,15 @@ public class ClassUtil {
         }
     }
 
-    public static void classCheck(String className) {
+    public static void checkClass(String className, String message) {
         try {
             Class.forName(className);
         } catch (Throwable t) {
-            logger.error("Failed to load class [{}] {}.", className, stackTrace(t));
-            ExceptionUtil.throwException(t);
+            throw new RuntimeException(message, t);
         }
     }
+
+    public static <T> void forClass(@SuppressWarnings("unused") Class<T> clazz) {}
+
+    private ClassUtil() {}
 }

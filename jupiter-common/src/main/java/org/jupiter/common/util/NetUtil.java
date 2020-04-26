@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 The Jupiter Project
+ * Copyright (c) 2015 The Jupiter Project
  *
  * Licensed under the Apache License, version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.common.util;
 
 import java.net.InetAddress;
@@ -28,7 +27,7 @@ import java.util.regex.Pattern;
  *
  * @author jiachun.fjc
  */
-public class NetUtil {
+public final class NetUtil {
 
     private static final Pattern IP_PATTERN = Pattern.compile("\\d{1,3}(\\.\\d{1,3}){3}$");
     private static final String LOCAL_IP_ADDRESS;
@@ -84,4 +83,6 @@ public class NetUtil {
                 && !"127.0.0.1".equals(name)
                 && IP_PATTERN.matcher(name).matches());
     }
+
+    private NetUtil() {}
 }

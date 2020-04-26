@@ -13,16 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.rpc.load.balance;
+
+import java.util.List;
 
 import org.jupiter.common.util.SystemClock;
 import org.jupiter.transport.Directory;
 import org.jupiter.transport.UnresolvedAddress;
 import org.jupiter.transport.channel.JChannel;
 import org.jupiter.transport.channel.JChannelGroup;
-
-import java.util.List;
 
 /**
  * jupiter
@@ -88,6 +87,14 @@ public class ChannelGroup implements JChannelGroup {
     }
 
     @Override
+    public boolean isConnecting() {
+        return false;
+    }
+
+    @Override
+    public void setConnecting(boolean connecting) {}
+
+    @Override
     public boolean isAvailable() {
         return false;
     }
@@ -98,12 +105,15 @@ public class ChannelGroup implements JChannelGroup {
     }
 
     @Override
+    public void onAvailable(Runnable callback) {}
+
+    @Override
     public int getWeight(Directory directory) {
-        return 0;
+        return weight;
     }
 
     @Override
-    public void setWeight(Directory directory, int weight) {}
+    public void putWeight(Directory directory, int weight) {}
 
     @Override
     public void removeWeight(Directory directory) {}

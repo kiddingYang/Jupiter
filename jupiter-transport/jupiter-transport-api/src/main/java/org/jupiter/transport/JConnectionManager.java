@@ -13,15 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.transport;
+
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.jupiter.common.util.Maps;
 import org.jupiter.common.util.internal.logging.InternalLogger;
 import org.jupiter.common.util.internal.logging.InternalLoggerFactory;
-
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Jupiter的连接管理器, 用于自动管理(按照地址归组)连接.
@@ -56,7 +55,7 @@ public class JConnectionManager {
     /**
      * 取消对指定地址的自动重连
      */
-    public void cancelReconnect(UnresolvedAddress address) {
+    public void cancelAutoReconnect(UnresolvedAddress address) {
         CopyOnWriteArrayList<JConnection> list = connections.remove(address);
         if (list != null) {
             for (JConnection c : list) {
@@ -69,9 +68,9 @@ public class JConnectionManager {
     /**
      * 取消对所有地址的自动重连
      */
-    public void cancelAllReconnect() {
+    public void cancelAllAutoReconnect() {
         for (UnresolvedAddress address : connections.keySet()) {
-            cancelReconnect(address);
+            cancelAutoReconnect(address);
         }
     }
 }

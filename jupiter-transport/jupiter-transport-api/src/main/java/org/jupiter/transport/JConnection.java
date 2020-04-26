@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.transport;
 
 /**
@@ -34,9 +33,14 @@ public abstract class JConnection {
         return address;
     }
 
-    public void operationComplete(@SuppressWarnings("unused") Runnable callback) {
+    public void operationComplete(@SuppressWarnings("unused") OperationListener operationListener) {
         // the default implementation does nothing
     }
 
     public abstract void setReconnect(boolean reconnect);
+
+    public interface OperationListener {
+
+        void complete(boolean isSuccess);
+    }
 }

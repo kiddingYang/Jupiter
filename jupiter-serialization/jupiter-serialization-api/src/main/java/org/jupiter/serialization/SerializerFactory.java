@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.serialization;
 
 import org.jupiter.common.util.JServiceLoader;
@@ -50,12 +49,14 @@ public final class SerializerFactory {
         if (serializer == null) {
             SerializerType type = SerializerType.parse(code);
             if (type != null) {
-                throw new IllegalArgumentException("serializer implementation [" + type.name() + "] not found");
+                throw new IllegalArgumentException("Serializer implementation [" + type.name() + "] not found");
             } else {
-                throw new IllegalArgumentException("unsupported serializer type with code: " + code);
+                throw new IllegalArgumentException("Unsupported serializer type with code: " + code);
             }
         }
 
         return serializer;
     }
+
+    private SerializerFactory() {}
 }

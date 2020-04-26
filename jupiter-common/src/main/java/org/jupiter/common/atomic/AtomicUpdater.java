@@ -13,12 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.common.atomic;
 
-import org.jupiter.common.util.internal.JUnsafe;
-
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+
+import org.jupiter.common.util.internal.UnsafeUtil;
 
 /**
  * A tool utility that enables atomic updates to designated {@code volatile} fields of designated classes.
@@ -40,7 +39,11 @@ public final class AtomicUpdater {
     public static <U, W> AtomicReferenceFieldUpdater<U, W> newAtomicReferenceFieldUpdater(
             Class<U> tClass, Class<W> vClass, String fieldName) {
         try {
-            return new UnsafeAtomicReferenceFieldUpdater<>(JUnsafe.getUnsafe(), tClass, fieldName);
+            if (UnsafeUtil.hasUnsafe()) {
+                return new UnsafeAtomicReferenceFieldUpdater<>(UnsafeUtil.getUnsafeAccessor().getUnsafe(), tClass, fieldName);
+            } else {
+                return AtomicReferenceFieldUpdater.newUpdater(tClass, vClass, fieldName);
+            }
         } catch (Throwable t) {
             return AtomicReferenceFieldUpdater.newUpdater(tClass, vClass, fieldName);
         }

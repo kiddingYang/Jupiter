@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.transport;
 
 /**
@@ -34,6 +33,7 @@ public interface Transporter {
      * 传输层协议.
      */
     enum Protocol {
-        TCP
+        TCP,
+        DOMAIN  // Unix domain socket
     }
 }

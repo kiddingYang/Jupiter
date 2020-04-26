@@ -13,21 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.rpc;
-
-import org.jupiter.common.util.*;
-import org.jupiter.common.util.internal.logging.InternalLogger;
-import org.jupiter.common.util.internal.logging.InternalLoggerFactory;
-import org.jupiter.registry.RegisterMeta;
-import org.jupiter.registry.RegistryService;
-import org.jupiter.rpc.flow.control.FlowController;
-import org.jupiter.rpc.model.metadata.ServiceMetadata;
-import org.jupiter.rpc.model.metadata.ServiceWrapper;
-import org.jupiter.rpc.provider.ProviderInterceptor;
-import org.jupiter.rpc.provider.processor.DefaultProviderProcessor;
-import org.jupiter.transport.Directory;
-import org.jupiter.transport.JAcceptor;
 
 import java.lang.reflect.Method;
 import java.util.Collections;
@@ -36,9 +22,26 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
 
-import static org.jupiter.common.util.Preconditions.checkArgument;
-import static org.jupiter.common.util.Preconditions.checkNotNull;
-import static org.jupiter.common.util.StackTraceUtil.stackTrace;
+import org.jupiter.common.util.JConstants;
+import org.jupiter.common.util.JServiceLoader;
+import org.jupiter.common.util.Lists;
+import org.jupiter.common.util.Maps;
+import org.jupiter.common.util.Pair;
+import org.jupiter.common.util.Requires;
+import org.jupiter.common.util.StackTraceUtil;
+import org.jupiter.common.util.Strings;
+import org.jupiter.common.util.internal.logging.InternalLogger;
+import org.jupiter.common.util.internal.logging.InternalLoggerFactory;
+import org.jupiter.registry.RegisterMeta;
+import org.jupiter.registry.RegistryService;
+import org.jupiter.rpc.flow.control.ControlResult;
+import org.jupiter.rpc.flow.control.FlowController;
+import org.jupiter.rpc.model.metadata.ServiceMetadata;
+import org.jupiter.rpc.model.metadata.ServiceWrapper;
+import org.jupiter.rpc.provider.ProviderInterceptor;
+import org.jupiter.rpc.provider.processor.DefaultProviderProcessor;
+import org.jupiter.transport.Directory;
+import org.jupiter.transport.JAcceptor;
 
 /**
  * Jupiter默认服务端实现.
@@ -51,12 +54,6 @@ import static org.jupiter.common.util.StackTraceUtil.stackTrace;
 public class DefaultServer implements JServer {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(DefaultServer.class);
-
-    static {
-        // touch off TracingUtil.<clinit>
-        // because getLocalAddress() and getPid() sometimes too slow
-        ClassUtil.classInitialize("org.jupiter.rpc.tracing.TracingUtil", 500);
-    }
 
     // provider本地容器
     private final ServiceProviderContainer providerContainer = new DefaultServiceProviderContainer();
@@ -88,7 +85,22 @@ public class DefaultServer implements JServer {
     @Override
     public JServer withAcceptor(JAcceptor acceptor) {
         if (acceptor.processor() == null) {
-            acceptor.withProcessor(new DefaultProviderProcessor(this));
+            acceptor.withProcessor(new DefaultProviderProcessor() {
+
+                @Override
+                public ServiceWrapper lookupService(Directory directory) {
+                    return providerContainer.lookupService(directory.directoryString());
+                }
+
+                @Override
+                public ControlResult flowControl(JRequest request) {
+                    // 全局流量控制
+                    if (globalFlowController == null) {
+                        return ControlResult.ALLOWED;
+                    }
+                    return globalFlowController.flowControl(request);
+                }
+            });
         }
         this.acceptor = acceptor;
         return this;
@@ -126,12 +138,12 @@ public class DefaultServer implements JServer {
 
     @Override
     public ServiceWrapper lookupService(Directory directory) {
-        return providerContainer.lookupService(directory.directory());
+        return providerContainer.lookupService(directory.directoryString());
     }
 
     @Override
     public ServiceWrapper removeService(Directory directory) {
-        return providerContainer.removeService(directory.directory());
+        return providerContainer.removeService(directory.directoryString());
     }
 
     @Override
@@ -161,20 +173,17 @@ public class DefaultServer implements JServer {
         }
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public <T> void publishWithInitializer(
             final ServiceWrapper serviceWrapper, final ProviderInitializer<T> initializer, Executor executor) {
-        Runnable task = new Runnable() {
-
-            @SuppressWarnings("unchecked")
-            @Override
-            public void run() {
-                try {
-                    initializer.init((T) serviceWrapper.getServiceProvider());
-                    publish(serviceWrapper);
-                } catch (Exception e) {
-                    logger.error("Error on {} #publishWithInitializer: {}.", serviceWrapper.getMetadata(), stackTrace(e));
-                }
+        Runnable task = () -> {
+            try {
+                initializer.init((T) serviceWrapper.getServiceProvider());
+                publish(serviceWrapper);
+            } catch (Exception e) {
+                logger.error("Error on {} #publishWithInitializer: {}.", serviceWrapper.getMetadata(),
+                        StackTraceUtil.stackTrace(e));
             }
         };
 
@@ -192,6 +201,7 @@ public class DefaultServer implements JServer {
         }
     }
 
+    @SuppressWarnings("all")
     @Override
     public void unpublish(ServiceWrapper serviceWrapper) {
         ServiceMetadata metadata = serviceWrapper.getMetadata();
@@ -207,6 +217,7 @@ public class DefaultServer implements JServer {
         registryService.unregister(meta);
     }
 
+    @SuppressWarnings("all")
     @Override
     public void unpublishAll() {
         for (ServiceWrapper wrapper : providerContainer.getAllServices()) {
@@ -254,7 +265,7 @@ public class DefaultServer implements JServer {
             Collections.addAll(tempList, interceptors);
         }
         if (!tempList.isEmpty()) {
-            allInterceptors = tempList.toArray(new ProviderInterceptor[tempList.size()]);
+            allInterceptors = tempList.toArray(new ProviderInterceptor[0]);
         }
 
         ServiceWrapper wrapper =
@@ -264,7 +275,7 @@ public class DefaultServer implements JServer {
         wrapper.setExecutor(executor);
         wrapper.setFlowController(flowController);
 
-        providerContainer.registerService(wrapper.getMetadata().directory(), wrapper);
+        providerContainer.registerService(wrapper.getMetadata().directoryString(), wrapper);
 
         return wrapper;
     }
@@ -332,7 +343,7 @@ public class DefaultServer implements JServer {
 
         @Override
         public ServiceWrapper register() {
-            checkNotNull(serviceProvider, "serviceProvider");
+            Requires.requireNotNull(serviceProvider, "serviceProvider");
 
             Class<?> providerClass = serviceProvider.getClass();
 
@@ -351,7 +362,7 @@ public class DefaultServer implements JServer {
                             continue;
                         }
 
-                        checkArgument(
+                        Requires.requireTrue(
                                 interfaceClass == null,
                                 i.getName() + " has a @ServiceProvider annotation, can't set [interfaceClass] again"
                         );
@@ -367,11 +378,11 @@ public class DefaultServer implements JServer {
             }
 
             if (ifAnnotation != null) {
-                checkArgument(
+                Requires.requireTrue(
                         group == null,
                         interfaceClass.getName() + " has a @ServiceProvider annotation, can't set [group] again"
                 );
-                checkArgument(
+                Requires.requireTrue(
                         providerName == null,
                         interfaceClass.getName() + " has a @ServiceProvider annotation, can't set [providerName] again"
                 );
@@ -382,7 +393,7 @@ public class DefaultServer implements JServer {
             }
 
             if (implAnnotation != null) {
-                checkArgument(
+                Requires.requireTrue(
                         version == null,
                         providerClass.getName() + " has a @ServiceProviderImpl annotation, can't set [version] again"
                 );
@@ -390,10 +401,10 @@ public class DefaultServer implements JServer {
                 version = implAnnotation.version();
             }
 
-            checkNotNull(interfaceClass, "interfaceClass");
-            checkArgument(Strings.isNotBlank(group), "group");
-            checkArgument(Strings.isNotBlank(providerName), "providerName");
-            checkArgument(Strings.isNotBlank(version), "version");
+            Requires.requireNotNull(interfaceClass, "interfaceClass");
+            Requires.requireTrue(Strings.isNotBlank(group), "group");
+            Requires.requireTrue(Strings.isNotBlank(providerName), "providerName");
+            Requires.requireTrue(Strings.isNotBlank(version), "version");
 
             // method's extensions
             //
@@ -403,11 +414,7 @@ public class DefaultServer implements JServer {
             Map<String, List<Pair<Class<?>[], Class<?>[]>>> extensions = Maps.newHashMap();
             for (Method method : interfaceClass.getMethods()) {
                 String methodName = method.getName();
-                List<Pair<Class<?>[], Class<?>[]>> list = extensions.get(methodName);
-                if (list == null) {
-                    list = Lists.newArrayList();
-                    extensions.put(methodName, list);
-                }
+                List<Pair<Class<?>[], Class<?>[]>> list = extensions.computeIfAbsent(methodName, k -> Lists.newArrayList());
                 list.add(Pair.of(method.getParameterTypes(), method.getExceptionTypes()));
             }
 

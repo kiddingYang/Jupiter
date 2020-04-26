@@ -13,16 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.example.broadcast;
 
+import java.util.concurrent.CompletableFuture;
+
 import org.jupiter.example.ServiceTest;
-import org.jupiter.rpc.*;
+import org.jupiter.rpc.DefaultClient;
+import org.jupiter.rpc.DispatchType;
+import org.jupiter.rpc.InvokeType;
+import org.jupiter.rpc.JClient;
 import org.jupiter.rpc.consumer.ProxyFactory;
 import org.jupiter.rpc.consumer.future.InvokeFuture;
 import org.jupiter.rpc.consumer.future.InvokeFutureContext;
 import org.jupiter.rpc.consumer.future.InvokeFutureGroup;
 import org.jupiter.transport.UnresolvedAddress;
+import org.jupiter.transport.UnresolvedSocketAddress;
 import org.jupiter.transport.netty.JNettyTcpConnector;
 
 /**
@@ -39,13 +44,13 @@ public class JupiterBroadcastClient {
         JClient client = new DefaultClient().withConnector(new JNettyTcpConnector());
 
         UnresolvedAddress[] addresses = {
-                new UnresolvedAddress("127.0.0.1", 18090),
-                new UnresolvedAddress("127.0.0.1", 18091),
-                new UnresolvedAddress("127.0.0.1", 18092),
-                new UnresolvedAddress("127.0.0.1", 18090),
-                new UnresolvedAddress("127.0.0.1", 18091),
-                new UnresolvedAddress("127.0.0.1", 18092),
-                new UnresolvedAddress("127.0.0.1", 18090)
+                new UnresolvedSocketAddress("127.0.0.1", 18090),
+                new UnresolvedSocketAddress("127.0.0.1", 18091),
+                new UnresolvedSocketAddress("127.0.0.1", 18092),
+                new UnresolvedSocketAddress("127.0.0.1", 18090),
+                new UnresolvedSocketAddress("127.0.0.1", 18091),
+                new UnresolvedSocketAddress("127.0.0.1", 18092),
+                new UnresolvedSocketAddress("127.0.0.1", 18090)
         };
 
         for (UnresolvedAddress address : addresses) {
@@ -68,17 +73,13 @@ public class JupiterBroadcastClient {
 
             InvokeFutureGroup<ServiceTest.ResultClass> futureGroup =
                     InvokeFutureContext.futureBroadcast(ServiceTest.ResultClass.class);
-            futureGroup.addListener(new JListener<ServiceTest.ResultClass>() {
-
-                @Override
-                public void complete(ServiceTest.ResultClass result) {
-                    System.out.print("Callback result: ");
-                    System.out.println(result);
-                }
-
-                @Override
-                public void failure(Throwable cause) {
-                    cause.printStackTrace();
+            final CompletableFuture<ServiceTest.ResultClass>[] cfs = futureGroup.toCompletableFutures();
+            CompletableFuture.allOf(cfs).whenComplete((aVoid, throwable) -> {
+                if (throwable == null) {
+                    for (CompletableFuture<ServiceTest.ResultClass> f : cfs) {
+                        System.out.print("Callback result: ");
+                        System.out.println(f.join());
+                    }
                 }
             });
 

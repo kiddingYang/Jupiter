@@ -13,10 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.common.util;
-
-import org.objectweb.asm.*;
 
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
@@ -26,7 +23,32 @@ import java.util.Arrays;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import static org.objectweb.asm.Opcodes.*;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
+
+import static org.objectweb.asm.Opcodes.AALOAD;
+import static org.objectweb.asm.Opcodes.ACC_PUBLIC;
+import static org.objectweb.asm.Opcodes.ACC_SUPER;
+import static org.objectweb.asm.Opcodes.ACC_VARARGS;
+import static org.objectweb.asm.Opcodes.ACONST_NULL;
+import static org.objectweb.asm.Opcodes.ALOAD;
+import static org.objectweb.asm.Opcodes.ARETURN;
+import static org.objectweb.asm.Opcodes.ASTORE;
+import static org.objectweb.asm.Opcodes.ATHROW;
+import static org.objectweb.asm.Opcodes.BIPUSH;
+import static org.objectweb.asm.Opcodes.CHECKCAST;
+import static org.objectweb.asm.Opcodes.DUP;
+import static org.objectweb.asm.Opcodes.ILOAD;
+import static org.objectweb.asm.Opcodes.INVOKEINTERFACE;
+import static org.objectweb.asm.Opcodes.INVOKESPECIAL;
+import static org.objectweb.asm.Opcodes.INVOKESTATIC;
+import static org.objectweb.asm.Opcodes.INVOKEVIRTUAL;
+import static org.objectweb.asm.Opcodes.NEW;
+import static org.objectweb.asm.Opcodes.RETURN;
+import static org.objectweb.asm.Opcodes.V1_1;
 
 /**
  * jupiter
@@ -54,7 +76,7 @@ public abstract class FastMethodAccessor {
      *              return 直接调用 this.methodNames[1] 对应的方法;
      *          case ...
      *      }
-     *      throw new IllegalArgumentException("method not found: " + methodIndex);
+     *      throw new IllegalArgumentException("Method not found: " + methodIndex);
      *  }
      *
      */
@@ -71,7 +93,7 @@ public abstract class FastMethodAccessor {
             }
         }
         throw new IllegalArgumentException(
-                "unable to find non-private method: " + methodName + " " + Arrays.toString(parameterTypes));
+                "Unable to find non-private method: " + methodName + " " + Arrays.toString(parameterTypes));
     }
 
     public static FastMethodAccessor get(Class<?> type) {
@@ -271,12 +293,12 @@ public abstract class FastMethodAccessor {
                 mv.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
             }
 
-            // throw exception (method not found)
+            // throw exception (Method not found)
             mv.visitTypeInsn(NEW, "java/lang/IllegalArgumentException");
             mv.visitInsn(DUP);
             mv.visitTypeInsn(NEW, "java/lang/StringBuilder");
             mv.visitInsn(DUP);
-            mv.visitLdcInsn("method not found: ");
+            mv.visitLdcInsn("Method not found: ");
             mv.visitMethodInsn(INVOKESPECIAL, "java/lang/StringBuilder", "<init>", "(Ljava/lang/String;)V", false);
             mv.visitVarInsn(ILOAD, 2);
             mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append", "(I)Ljava/lang/StringBuilder;", false);

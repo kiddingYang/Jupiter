@@ -13,11 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.transport.netty;
 
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
+
 import org.jupiter.transport.JConnection;
 import org.jupiter.transport.UnresolvedAddress;
 
@@ -41,15 +41,7 @@ public abstract class JNettyConnection extends JConnection {
     }
 
     @Override
-    public void operationComplete(final Runnable callback) {
-        future.addListener(new ChannelFutureListener() {
-
-            @Override
-            public void operationComplete(ChannelFuture future) throws Exception {
-                if (future.isSuccess()) {
-                    callback.run();
-                }
-            }
-        });
+    public void operationComplete(final OperationListener operationListener) {
+        future.addListener((ChannelFutureListener) future -> operationListener.complete(future.isSuccess()));
     }
 }

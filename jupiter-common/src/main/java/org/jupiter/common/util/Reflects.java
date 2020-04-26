@@ -13,19 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.common.util;
-
-import org.objenesis.Objenesis;
-import org.objenesis.ObjenesisStd;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
-
-import static org.jupiter.common.util.Preconditions.checkNotNull;
 
 /**
  * Static utility methods pertaining to reflection.
@@ -36,8 +30,6 @@ import static org.jupiter.common.util.Preconditions.checkNotNull;
  * @author jiachun.fjc
  */
 public final class Reflects {
-
-    private static final Objenesis objenesis = new ObjenesisStd(true);
 
     /**
      * Maps primitive {@link Class}es to their corresponding wrapper {@link Class}.
@@ -85,37 +77,6 @@ public final class Reflects {
     };
 
     /**
-     * Creates a new object.
-     *
-     * @param clazz the class to instantiate
-     * @return new instance of clazz
-     */
-    public static <T> T newInstance(Class<T> clazz) {
-        return newInstance(clazz, true);
-    }
-
-    /**
-     * Creates a new object.
-     *
-     * @param clazz             the class to instantiate
-     * @param constructorCalled whether or not any constructor being called
-     * @return new instance of clazz
-     */
-    public static <T> T newInstance(Class<T> clazz, boolean constructorCalled) {
-        if (constructorCalled) {
-            try {
-                return clazz.newInstance();
-            } catch (Exception e) {
-                ExceptionUtil.throwException(e);
-            }
-        } else {
-            // without any constructor being called
-            return objenesis.newInstance(clazz);
-        }
-        return null; // should never get here
-    }
-
-    /**
      * Invokes the underlying method, fast invoke using ASM.
      *
      * @param obj            the object the underlying method is invoked from
@@ -141,7 +102,7 @@ public final class Reflects {
      * @throws NoSuchFieldException if a field with the specified name is not found.
      */
     public static Field getField(Class<?> clazz, String name) throws NoSuchFieldException {
-        for (Class<?> cls = checkNotNull(clazz, "class"); cls != null; cls = cls.getSuperclass()) {
+        for (Class<?> cls = Requires.requireNotNull(clazz, "class"); cls != null; cls = cls.getSuperclass()) {
             try {
                 return cls.getDeclaredField(name);
             } catch (Throwable ignored) {}
@@ -163,7 +124,7 @@ public final class Reflects {
             Field fd = setAccessible(getField(clazz, name));
             value = fd.get(null);
         } catch (Exception e) {
-            ExceptionUtil.throwException(e);
+            ThrowUtil.throwException(e);
         }
         return value;
     }
@@ -182,7 +143,7 @@ public final class Reflects {
             Field fd = setAccessible(getField(clazz, name));
             fd.set(null, value);
         } catch (Exception e) {
-            ExceptionUtil.throwException(e);
+            ThrowUtil.throwException(e);
         }
     }
 
@@ -200,7 +161,7 @@ public final class Reflects {
             Field fd = setAccessible(getField(o.getClass(), name));
             value = fd.get(o);
         } catch (Exception e) {
-            ExceptionUtil.throwException(e);
+            ThrowUtil.throwException(e);
         }
         return value;
     }
@@ -218,7 +179,7 @@ public final class Reflects {
             Field fd = setAccessible(getField(o.getClass(), name));
             fd.set(o, value);
         } catch (Exception e) {
-            ExceptionUtil.throwException(e);
+            ThrowUtil.throwException(e);
         }
     }
 
@@ -226,7 +187,7 @@ public final class Reflects {
      * Returns the default value for the specified class.
      */
     public static Object getTypeDefaultValue(Class<?> clazz) {
-        checkNotNull(clazz, "clazz");
+        Requires.requireNotNull(clazz, "clazz");
 
         if (clazz.isPrimitive()) {
             if (clazz == byte.class) {
@@ -292,7 +253,9 @@ public final class Reflects {
         } else {
             parameterTypes = new Class[args.length];
             for (int i = 0; i < args.length; i++) {
-                parameterTypes[i] = args[i].getClass();
+                if (args[i] != null) {
+                    parameterTypes[i] = args[i].getClass();
+                }
             }
         }
 
@@ -324,7 +287,9 @@ public final class Reflects {
         } else {
             parameterTypes = new Class[args.length];
             for (int i = 0; i < args.length; i++) {
-                parameterTypes[i] = args[i].getClass();
+                if (args[i] != null) {
+                    parameterTypes[i] = args[i].getClass();
+                }
             }
         }
 

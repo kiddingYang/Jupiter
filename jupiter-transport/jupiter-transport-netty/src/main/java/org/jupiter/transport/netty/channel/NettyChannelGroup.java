@@ -13,21 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.transport.netty.channel;
-
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
-import org.jupiter.common.atomic.AtomicUpdater;
-import org.jupiter.common.util.*;
-import org.jupiter.transport.Directory;
-import org.jupiter.transport.UnresolvedAddress;
-import org.jupiter.transport.channel.JChannel;
-import org.jupiter.transport.channel.JChannelGroup;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -36,7 +27,21 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-import static org.jupiter.common.util.Preconditions.checkNotNull;
+import io.netty.channel.ChannelFutureListener;
+
+import org.jupiter.common.atomic.AtomicUpdater;
+import org.jupiter.common.util.IntSequence;
+import org.jupiter.common.util.JConstants;
+import org.jupiter.common.util.Lists;
+import org.jupiter.common.util.Maps;
+import org.jupiter.common.util.Requires;
+import org.jupiter.common.util.SystemClock;
+import org.jupiter.common.util.SystemPropertyUtil;
+import org.jupiter.common.util.ThrowUtil;
+import org.jupiter.transport.Directory;
+import org.jupiter.transport.UnresolvedAddress;
+import org.jupiter.transport.channel.JChannel;
+import org.jupiter.transport.channel.JChannelGroup;
 
 /**
  * jupiter
@@ -49,33 +54,23 @@ public class NettyChannelGroup implements JChannelGroup {
     private static long LOSS_INTERVAL = SystemPropertyUtil
             .getLong("jupiter.io.channel.group.loss.interval.millis", TimeUnit.MINUTES.toMillis(5));
 
+    private static int DEFAULT_SEQUENCE_STEP = (JConstants.AVAILABLE_PROCESSORS << 3) + 1;
+
     private static final AtomicReferenceFieldUpdater<CopyOnWriteArrayList, Object[]> channelsUpdater =
             AtomicUpdater.newAtomicReferenceFieldUpdater(CopyOnWriteArrayList.class, Object[].class, "array");
     private static final AtomicIntegerFieldUpdater<NettyChannelGroup> signalNeededUpdater =
             AtomicIntegerFieldUpdater.newUpdater(NettyChannelGroup.class, "signalNeeded");
-    private static final AtomicIntegerFieldUpdater<NettyChannelGroup> indexUpdater =
-            AtomicIntegerFieldUpdater.newUpdater(NettyChannelGroup.class, "index");
 
-    private static final ThreadLocal<SimpleDateFormat> dateFormatThreadLocal = new ThreadLocal<SimpleDateFormat>() {
-
-        @Override
-        protected SimpleDateFormat initialValue() {
-            return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSSZ");
-        }
-    };
+    private final ConcurrentLinkedQueue<Runnable> waitAvailableListeners = new ConcurrentLinkedQueue<>();
 
     private final UnresolvedAddress address;
 
     private final CopyOnWriteArrayList<NettyChannel> channels = new CopyOnWriteArrayList<>();
 
     // 连接断开时自动被移除
-    private final ChannelFutureListener remover = new ChannelFutureListener() {
+    private final ChannelFutureListener remover = future -> remove(NettyChannel.attachChannel(future.channel()));
 
-        @Override
-        public void operationComplete(ChannelFuture future) throws Exception {
-            remove(NettyChannel.attachChannel(future.channel()));
-        }
-    };
+    private final IntSequence sequence = new IntSequence(DEFAULT_SEQUENCE_STEP);
 
     private final ConcurrentMap<String, Integer> weights = Maps.newConcurrentMap();
 
@@ -85,8 +80,8 @@ public class NettyChannelGroup implements JChannelGroup {
     @SuppressWarnings("all")
     private volatile int signalNeeded = 0; // 0: false, 1: true
 
-    @SuppressWarnings("unused")
-    private volatile int index = 0;
+    private volatile boolean connecting = false;
+
     private volatile int capacity = Integer.MAX_VALUE;
     private volatile int warmUp = JConstants.DEFAULT_WARM_UP; // warm-up time
     private volatile long timestamp = SystemClock.millisClock().now();
@@ -111,13 +106,13 @@ public class NettyChannelGroup implements JChannelGroup {
                 if (waitForAvailable(1000)) { // wait a moment
                     continue;
                 }
-                throw new IllegalStateException("no channel");
+                throw new IllegalStateException("No channel");
             }
             if (length == 1) {
                 return (JChannel) elements[0];
             }
 
-            int index = indexUpdater.getAndIncrement(this) & Integer.MAX_VALUE;
+            int index = sequence.next() & Integer.MAX_VALUE;
 
             return (JChannel) elements[index % length];
         }
@@ -133,6 +128,7 @@ public class NettyChannelGroup implements JChannelGroup {
         return channels.isEmpty();
     }
 
+    @SuppressWarnings("ConstantConditions")
     @Override
     public boolean add(JChannel channel) {
         boolean added = channel instanceof NettyChannel && channels.add((NettyChannel) channel);
@@ -151,6 +147,8 @@ public class NettyChannelGroup implements JChannelGroup {
                     _look.unlock();
                 }
             }
+
+            notifyListeners();
         }
         return added;
     }
@@ -184,6 +182,16 @@ public class NettyChannelGroup implements JChannelGroup {
     }
 
     @Override
+    public boolean isConnecting() {
+        return connecting;
+    }
+
+    @Override
+    public void setConnecting(boolean connecting) {
+        this.connecting = connecting;
+    }
+
+    @Override
     public boolean isAvailable() {
         return !channels.isEmpty();
     }
@@ -207,7 +215,7 @@ public class NettyChannelGroup implements JChannelGroup {
                 }
             }
         } catch (InterruptedException e) {
-            ExceptionUtil.throwException(e);
+            ThrowUtil.throwException(e);
         } finally {
             _look.unlock();
         }
@@ -216,29 +224,37 @@ public class NettyChannelGroup implements JChannelGroup {
     }
 
     @Override
-    public int getWeight(Directory directory) {
-        checkNotNull(directory, "directory");
+    public void onAvailable(Runnable listener) {
+        waitAvailableListeners.add(listener);
+        if (isAvailable()) {
+            notifyListeners();
+        }
+    }
 
-        Integer weight = weights.get(directory.directory());
+    @Override
+    public int getWeight(Directory directory) {
+        Requires.requireNotNull(directory, "directory");
+
+        Integer weight = weights.get(directory.directoryString());
         return weight == null ? JConstants.DEFAULT_WEIGHT : weight;
     }
 
     @Override
-    public void setWeight(Directory directory, int weight) {
-        checkNotNull(directory, "directory");
+    public void putWeight(Directory directory, int weight) {
+        Requires.requireNotNull(directory, "directory");
 
         if (weight == JConstants.DEFAULT_WEIGHT) {
             // the default value does not need to be stored
             return;
         }
-        weights.put(directory.directory(), weight > JConstants.MAX_WEIGHT ? JConstants.MAX_WEIGHT : weight);
+        weights.put(directory.directoryString(), weight > JConstants.MAX_WEIGHT ? JConstants.MAX_WEIGHT : weight);
     }
 
     @Override
     public void removeWeight(Directory directory) {
-        checkNotNull(directory, "directory");
+        Requires.requireNotNull(directory, "directory");
 
-        weights.remove(directory.directory());
+        weights.remove(directory.directoryString());
     }
 
     @Override
@@ -253,7 +269,7 @@ public class NettyChannelGroup implements JChannelGroup {
 
     @Override
     public boolean isWarmUpComplete() {
-        return SystemClock.millisClock().now() - timestamp - warmUp > 0;
+        return SystemClock.millisClock().now() - timestamp > warmUp;
     }
 
     @Override
@@ -283,15 +299,23 @@ public class NettyChannelGroup implements JChannelGroup {
 
     @Override
     public String toString() {
-        SimpleDateFormat dateFormat = dateFormatThreadLocal.get();
-
         return "NettyChannelGroup{" +
                 "address=" + address +
                 ", channels=" + channels +
                 ", weights=" + weights +
                 ", warmUp=" + warmUp +
-                ", timestamp=" + dateFormat.format(new Date(timestamp)) +
+                ", timestamp=" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSSZ").format(new Date(timestamp)) +
                 ", deadlineMillis=" + deadlineMillis +
                 '}';
+    }
+
+    void notifyListeners() {
+        for (;;) {
+            Runnable listener = waitAvailableListeners.poll();
+            if (listener == null) {
+                break;
+            }
+            listener.run();
+        }
     }
 }

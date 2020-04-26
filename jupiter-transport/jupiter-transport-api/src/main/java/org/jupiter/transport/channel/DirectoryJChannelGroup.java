@@ -13,15 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.transport.channel;
-
-import org.jupiter.common.util.Maps;
-import org.jupiter.transport.Directory;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.jupiter.common.util.Maps;
+import org.jupiter.transport.Directory;
 
 /**
  * jupiter
@@ -37,7 +36,7 @@ public class DirectoryJChannelGroup {
     private final GroupRefCounterMap groupRefCounter = new GroupRefCounterMap();
 
     public CopyOnWriteGroupList find(Directory directory) {
-        String _directory = directory.directory();
+        String _directory = directory.directoryString();
         CopyOnWriteGroupList groupList = groups.get(_directory);
         if (groupList == null) {
             CopyOnWriteGroupList newGroupList = new CopyOnWriteGroupList(this);

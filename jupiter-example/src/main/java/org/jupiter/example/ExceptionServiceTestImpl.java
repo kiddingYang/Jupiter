@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.example;
 
 import org.jupiter.rpc.ServiceProviderImpl;
@@ -30,9 +29,9 @@ public class ExceptionServiceTestImpl implements ExceptionServiceTest {
     @Override
     public String hello(int i) throws IllegalArgumentException {
         if (i > 0) {
-            throw new IllegalArgumentException("expected exception");
+            throw new IllegalArgumentException("Expected exception");
         } else {
-            throw new UnsupportedOperationException("unexpected exception");
+            throw new UnsupportedOperationException("Unexpected exception");
         }
     }
 }

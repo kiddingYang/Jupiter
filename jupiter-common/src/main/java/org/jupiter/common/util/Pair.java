@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jupiter.common.util;
 
 /**
@@ -54,9 +53,6 @@ public class Pair<First, Second> {
 
     @Override
     public String toString() {
-        return "Pair{" +
-                "first=" + first +
-                ", second=" + second +
-                '}';
+        return "[" + first + ", " + second + ']';
     }
 }
